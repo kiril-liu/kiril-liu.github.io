@@ -7,8 +7,11 @@ Usage (run in the site root folder):
   python new.py study    "Verilog Basics" [--meta "Verilog"]
   python new.py monthly                      (current month, e.g. 2026-10)
   python new.py monthly  "2026 November" --date 2026-11-30
-  python new.py thought  "Title" --text "Short content."
-  python new.py thought  "Title" --file my-text.txt     (blank line = new paragraph)
+  python new.py thoughts "Title"                         (empty template)
+  python new.py thoughts "Title" --file my-text.txt      (fill body from a text file)
+
+Any section accepts --file / --text to fill the body:
+  blank line in the text = new paragraph.
 
 Options:
   --date YYYY-MM-DD   use another date (default: today)
@@ -17,9 +20,10 @@ Options:
 import sys, re, argparse, datetime, pathlib, html as _html
 
 ROOT = pathlib.Path(__file__).resolve().parent
-LABEL = {"books": "Books", "study": "Study", "monthly": "Monthly"}
+LABEL = {"books": "Books", "study": "Study", "monthly": "Monthly", "thoughts": "Thoughts"}
 
 BODY = {
+"thoughts": """      <p>…</p>""",
 "books": """      <h2>One-line review</h2>
       <p>…</p>
 
@@ -75,7 +79,7 @@ def add_to_home(date, href, title):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("section", choices=["books", "study", "monthly", "thought"])
+    ap.add_argument("section", choices=["books", "study", "monthly", "thoughts"])
     ap.add_argument("title", nargs="?")
     ap.add_argument("--meta", default="")
     ap.add_argument("--date", default=datetime.date.today().isoformat())
@@ -84,21 +88,6 @@ def main():
     ap.add_argument("--file", default="")
     a = ap.parse_args()
     d = datetime.date.fromisoformat(a.date)
-
-    if a.section == "thought":
-        if not a.title:
-            sys.exit("Please give a title.")
-        raw = a.text
-        if a.file:
-            raw = pathlib.Path(a.file).read_text(encoding="utf-8")
-        raw = raw.strip() or "…"
-        paras = [" ".join(p.split()) for p in re.split(r"\n\s*\n", raw) if p.strip()]
-        ps = "\n".join(f"        <p>{_html.escape(p, quote=False)}</p>" for p in paras)
-        block = (f'      <article class="thought">\n        <time>{a.date}</time>\n'
-                 f'        <h2>{_html.escape(a.title, quote=False)}</h2>\n{ps}\n      </article>')
-        insert_after(ROOT / "thoughts.html", '    <div class="fade">', block)
-        print("Added thought to thoughts.html")
-        return
 
     sec = a.section
     if sec == "monthly":
@@ -117,11 +106,19 @@ def main():
         sys.exit(f"{out.relative_to(ROOT)} already exists.")
     out.parent.mkdir(exist_ok=True)
 
+    body = BODY[sec]
+    raw = a.text
+    if a.file:
+        raw = pathlib.Path(a.file).read_text(encoding="utf-8")
+    if raw.strip():
+        paras = [" ".join(x.split()) for x in re.split(r"\n\s*\n", raw.strip()) if x.strip()]
+        body = "\n".join(f"      <p>{_html.escape(x, quote=False)}</p>" for x in paras)
+
     tpl = (ROOT / "templates" / "post.html").read_text(encoding="utf-8")
     meta = f"<time>{a.date}</time>" + (f" &middot; {a.meta}" if a.meta else "")
     html = (tpl.replace("{{title}}", title).replace("{{section}}", sec)
                .replace("{{label}}", LABEL[sec]).replace("{{meta}}", meta)
-               .replace("{{body}}", BODY[sec]))
+               .replace("{{body}}", body))
     out.write_text(html, encoding="utf-8")
 
     li = f'      <li><span>{list_date}</span><a href="{sec}/{slug}.html">{title}</a></li>'
